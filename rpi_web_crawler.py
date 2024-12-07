@@ -1,8 +1,13 @@
-import requests
 from bs4 import BeautifulSoup
+import requests
+from selenium import webdriver
+from selenium.webdriver.chrome.service import Service
+from selenium.webdriver.common.by import By
+from selenium.webdriver.chrome.options import Options
+import time
 from urllib.parse import urljoin
 
-def crawl(start_url, max_pages=1500):
+def crawl(start_url, max_pages=50):
     """
     A simple web crawler for static pages.
     
@@ -13,6 +18,18 @@ def crawl(start_url, max_pages=1500):
     Returns:
         dict: A dictionary where keys are URLs and values are their HTML content.
     """
+    # Configure Selenium
+    service = Service("/opt/homebrew/bin/chromedriver")
+    options = Options()
+    options.add_argument("--headless")
+    options.add_argument("--disable-gpu")
+    options.add_argument("--no-sandbox")
+    options.add_argument("--disable-dev-shm-usage")
+    options.binary_location = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
+
+    # The path to the chrome browser
+    driver = webdriver.Chrome(service=service, options=options)
+
     to_visit = [start_url]  # List of URLs to visit
     visited = set()         # Set of visited URLs
     data = {}               # Dictionary to store URL and HTML content
@@ -21,18 +38,19 @@ def crawl(start_url, max_pages=1500):
         url = to_visit.pop(0)
         if url in visited:
             continue
-
         try:
-            # Fetch the HTML content
-            response = requests.get(url)
-            response.raise_for_status()
+            # Load the page
+            driver.get(url)
+            # TODO: Adjust the time to sleep for JS calls
+            time.sleep(1)
+            
+            soup = BeautifulSoup(driver.page_source, 'html.parser')
         except requests.RequestException as e:
             print(f"Failed to fetch {url}: {e}")
             continue
 
         visited.add(url)
-        soup = BeautifulSoup(response.text, 'html.parser')
-        data[url] = soup.prettify()  # Store the prettified HTML
+        data[url] = soup.prettify()
 
         # Find all links on the page
         for link in soup.find_all('a', href=True):
@@ -40,6 +58,7 @@ def crawl(start_url, max_pages=1500):
             if new_url not in visited and new_url not in to_visit:
                 to_visit.append(new_url)
 
+    driver.quit()
     return data
 
 if __name__ == "__main__":
