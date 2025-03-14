@@ -1,4 +1,5 @@
 import time
+import json
 from bs4 import BeautifulSoup
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support import expected_conditions as EC
@@ -19,25 +20,24 @@ def create_driver():
     return webdriver.Chrome(service=Service("/opt/homebrew/bin/chromedriver"), options=options)
 
 def fetch_dynamic_page(url, driver):
-    """Fetch a dynamic page using Selenium."""
+    """Fetch a dynamic page using Selenium and return the full HTML."""
     try:
         driver.get(url)
         WebDriverWait(driver, 10).until(
             EC.presence_of_element_located((By.TAG_NAME, "body"))
         )
-        soup = BeautifulSoup(driver.page_source, 'html.parser')
-        return soup.prettify()
+        return driver.page_source  # Return full raw HTML
     except Exception as e:
         print(f"Dynamic fetch failed for {url}: {e}")
         return None
 
 def crawl(start_url, whitelist_domain, max_pages=50):
-    """Crawl web pages dynamically, restricting to the whitelist domain."""
+    """Crawl web pages dynamically, fetching full HTML and BFS-traversing links."""
     to_visit = [start_url]
     visited = set()
-    data = {}
+    crawled_data = []
 
-    print(f"Starting crawl with start_url={start_url}, max_pages={max_pages}, whitelist_domain={whitelist_domain}")
+    print(f"Starting crawl: start_url={start_url}, max_pages={max_pages}, whitelist_domain={whitelist_domain}")
 
     driver = create_driver()
 
@@ -48,30 +48,42 @@ def crawl(start_url, whitelist_domain, max_pages=50):
                 continue
             visited.add(url)
 
-            # Fetch the page dynamically
             html = fetch_dynamic_page(url, driver)
             if not html:
                 continue
-            data[url] = html
 
-            # Add links to `to_visit` if in the whitelist
+            # Extract links for BFS traversal
             soup = BeautifulSoup(html, 'html.parser')
+            links = []
             for link in soup.find_all('a', href=True):
                 new_url = urljoin(url, link['href'])
                 parsed_url = urlparse(new_url)
                 if parsed_url.netloc == whitelist_domain:
                     if new_url not in visited and new_url not in to_visit:
                         to_visit.append(new_url)
+                        links.append(new_url)
                 else:
                     external_file.write(f"{new_url}\n")
 
+            # Store full HTML for text transformer
+            crawled_data.append({
+                "url": url,
+                "html": html,
+                "links": links
+            })
+
     driver.quit()
-    return data
+    return crawled_data
 
 if __name__ == "__main__":
     start_url = "https://projecteuler.net/about"
     whitelist_domain = "projecteuler.net"
     crawled_data = crawl(start_url, whitelist_domain)
 
-    for i, (url, html) in enumerate(crawled_data.items(), start=1):
-        print(f"{i}: Fetched {url} with {len(html)} characters of HTML")
+    # Save full HTML data for the text transformer
+    with open("crawled_data.json", "w") as f:
+        json.dump(crawled_data, f, indent=4)
+
+    # Print summary
+    for i, page in enumerate(crawled_data, start=1):
+        print(f"{i}: Processed {page['url']} ({len(page['html'])} characters of HTML)")
