@@ -2,6 +2,7 @@ import time
 import json
 import socket
 import os
+import argparse
 from selenium import webdriver
 from bs4 import BeautifulSoup
 from urllib.parse import urljoin, urlparse
@@ -14,7 +15,6 @@ from selenium.webdriver.support import expected_conditions as EC
 TRANSFORMER_HOST = 'localhost'
 TRANSFORMER_PORT = 9001
 
-
 def create_driver():
     options = Options()
     options.add_argument("--headless")
@@ -23,7 +23,6 @@ def create_driver():
     options.add_argument("--disable-dev-shm-usage")
     options.binary_location = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
     return webdriver.Chrome(service=Service("/opt/homebrew/bin/chromedriver"), options=options)
-
 
 def fetch_dynamic_page(url, driver):
     try:
@@ -34,7 +33,6 @@ def fetch_dynamic_page(url, driver):
         print(f"Failed to fetch {url}: {e}")
         return None
 
-
 def extract_links(html, base_url):
     soup = BeautifulSoup(html, "html.parser")
     links = set()
@@ -44,13 +42,11 @@ def extract_links(html, base_url):
         links.add(full_url)
     return links
 
-
 def is_same_domain(url, whitelist_domain):
     try:
         return urlparse(url).netloc.endswith(whitelist_domain)
     except:
         return False
-
 
 def send_to_transformer(url, html):
     try:
@@ -59,7 +55,6 @@ def send_to_transformer(url, html):
             sock.sendall((message + "\n").encode())
     except Exception as e:
         print(f"Error sending to transformer: {e}")
-
 
 def crawl(start_url, whitelist_domain, max_pages=50):
     to_visit = [start_url]
@@ -80,7 +75,6 @@ def crawl(start_url, whitelist_domain, max_pages=50):
 
         send_to_transformer(url, html)
 
-        # Extract and classify links
         links = extract_links(html, url)
         for link in links:
             if is_same_domain(link, whitelist_domain):
@@ -91,6 +85,14 @@ def crawl(start_url, whitelist_domain, max_pages=50):
 
     driver.quit()
 
+def main():
+    parser = argparse.ArgumentParser(description="Run the SearchRPI web crawler.")
+    parser.add_argument("--start", type=str, required=True, help="Starting URL to crawl")
+    parser.add_argument("--domain", type=str, required=True, help="Domain whitelist (e.g., rpi.edu)")
+    parser.add_argument("--max", type=int, default=50, help="Maximum number of pages to crawl")
+    args = parser.parse_args()
+
+    crawl(args.start, args.domain, args.max)
 
 if __name__ == "__main__":
-    crawl("https://projecteuler.net/about", "projecteuler.net")
+    main()
