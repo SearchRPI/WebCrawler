@@ -11,6 +11,7 @@ from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
+from crawler_logger import init_log, log_page_visit
 
 TRANSFORMER_HOST = 'localhost'
 TRANSFORMER_PORT = 9001
@@ -26,12 +27,14 @@ def create_driver():
 
 def fetch_dynamic_page(url, driver):
     try:
+        start_time = time.time()
         driver.get(url)
         WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.TAG_NAME, "body")))
-        return driver.page_source
+        elapsed = time.time() - start_time
+        return driver.page_source, elapsed
     except Exception as e:
         print(f"Failed to fetch {url}: {e}")
-        return None
+        return None, None
 
 def extract_links(html, base_url):
     soup = BeautifulSoup(html, "html.parser")
@@ -62,6 +65,7 @@ def crawl(start_url, whitelist_domain, max_pages=50):
     print(f"Crawling starting at {start_url}")
 
     driver = create_driver()
+    init_log()
 
     while to_visit and len(visited) < max_pages:
         url = to_visit.pop(0)
@@ -69,19 +73,31 @@ def crawl(start_url, whitelist_domain, max_pages=50):
             continue
         visited.add(url)
 
-        html = fetch_dynamic_page(url, driver)
+        html, load_time = fetch_dynamic_page(url, driver)
         if not html:
+            log_page_visit(url, status="failed")
             continue
 
         send_to_transformer(url, html)
 
+        content_size = len(html.encode('utf-8'))
         links = extract_links(html, url)
-        for link in links:
-            if is_same_domain(link, whitelist_domain):
-                if link not in visited:
-                    to_visit.append(link)
-            else:
-                print(f"[External] {link}")
+        internal_links = [link for link in links if is_same_domain(link, whitelist_domain)]
+        external_links = [link for link in links if not is_same_domain(link, whitelist_domain)]
+
+        log_page_visit(
+            url,
+            load_time=load_time,
+            content_size=content_size,
+            total_links=len(links),
+            internal_links=len(internal_links),
+            external_links=len(external_links),
+            status="success"
+        )
+
+        for link in internal_links:
+            if link not in visited and link not in to_visit:
+                to_visit.append(link)
 
     driver.quit()
 
